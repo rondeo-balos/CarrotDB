@@ -1,0 +1,10 @@
+{
+	"{uid}":{
+		"-read":"{uid} === {auth}",
+		"-write":"{uid} === {auth}"
+	},
+	"*":{
+		"-read":true,
+		"-write":false
+	}
+}
