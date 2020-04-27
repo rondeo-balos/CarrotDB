@@ -8,7 +8,7 @@ var carrotdb = {
 	},
 	auth: function(){
 		return {
-			signUp: function(user,pass,data){
+			signUp: function(user,pass,data,fun,funerr){
 				carrotdb.__getToken(function(res){
 					$.ajax(carrotdb.config.link,{
 						type:"POST",
@@ -22,9 +22,138 @@ var carrotdb = {
 							})
 						}
 					}).then(function(e){
-						var response = JSON.parse(e||{});
+						var response = JSON.parse(e||"{}");
+						localStorage.carrotdb_sessid = response.data.uid;
+						localStorage.carrotdb_type = 1;
+						fun(response.data);
+					}).catch(function(err){
+						var response = JSON.parse(err.responseText||{});
+						funerr(response);
 					});
 				});
+			},
+			tempSignIn: function(fun){
+				carrotdb.__getToken(function(res){
+					$.ajax(carrotdb.config.link,{
+						type:"POST",
+						data:{
+							"api":carrotdb.config.api,
+							"token":res.token,
+							"tempsignin":1
+						}
+					}).then(function(e){
+						var response = JSON.parse(e||"{}");
+						localStorage.carrotdb_sessid = response.data.uid;
+						localStorage.carrotdb_type = 0;
+						fun(response.data);
+					});
+				});
+			},
+			signIn: function(user,pass,fun,funerr){
+				carrotdb.__getToken(function(res){
+					$.ajax(carrotdb.config.link,{
+						type:"POST",
+						data:{
+							"api":carrotdb.config.api,
+							"token":res.token,
+							"signin":JSON.stringify({
+								"user":user,
+								"pass":pass
+							})
+						}
+					}).then(function(e){
+						var response = JSON.parse(e||"{}");
+						localStorage.carrotdb_sessid = response.data.uid;
+						localStorage.carrotdb_type = 1;
+						fun(response.data);
+					}).catch(function(err){
+						var response = JSON.parse(err.responseText||{});
+						funerr(response);
+					});
+				});
+			},
+			me: function(fun){
+				if(carrotdb.auth().isSignedIn()){
+					carrotdb.__getToken(function(res){
+						$.ajax(carrotdb.config.link,{
+							type:"POST",
+							data:{
+								"api":carrotdb.config.api,
+								"token":res.token,
+								"me":localStorage.carrotdb_sessid
+							}
+						}).then(function(e){
+							var response = JSON.parse(e||"{}");
+							fun(response.data);
+						});
+					});
+				}
+			},
+			update: function(user,usern,pass,passn,data,fun,funerr){
+				if(carrotdb.auth().isSignedIn()){
+					carrotdb.__getToken(function(res){
+						$.ajax(carrotdb.config.link,{
+							type:"POST",
+							data:{
+								"api":carrotdb.config.api,
+								"token":res.token,
+								"update":localStorage.carrotdb_sessid,
+								"data":JSON.stringify({
+									"user":user,
+									"pass":pass,
+									"usern":usern,
+									"passn":passn,
+									"data":data
+								})
+							}
+						}).then(function(e){
+							var response = JSON.parse(e||"{}");
+							fun(response.data);
+						}).catch(function(err){
+							var response = JSON.parse(err.responseText||"{}");
+							funerr(response);
+						});
+					});
+				}
+			},
+			migrate: function(user,pass,data,fun,funerr){
+				if(carrotdb.auth().isSignedIn()){
+					carrotdb.__getToken(function(res){
+						$.ajax(carrotdb.config.link,{
+							type:"POST",
+							data:{
+								"api":carrotdb.config.api,
+								"token":res.token,
+								"migrate":localStorage.carrotdb_sessid,
+								"data":JSON.stringify({
+									"user":user,
+									"pass":pass,
+									"data":data
+								})
+							}
+						}).then(function(e){
+							var response = JSON.parse(e||"{}");
+							fun(response.data);
+						}).catch(function(err){
+							var response = JSON.parse(err.responseText||"{}");
+							funerr(response);
+						});
+					});
+				}
+			},
+			signOut: function(link){
+				localStorage.removeItem("carrotdb_sessid");
+				localStorage.clear();
+				if(typeof link !== 'undefined')
+					carrotdb.auth().setUnsignedPage(link);
+			},
+			isSignedIn: function(){
+				return (typeof localStorage.carrotdb_sessid !== 'undefined');
+			},
+			setUnsignedPage: function(link){
+				if(!carrotdb.auth().isSignedIn()){
+					document.location = link;
+				}
 			}
 		}
 	},
@@ -49,7 +178,7 @@ var carrotdb = {
 									"collection":collection
 								}
 							}).then(function(e){
-								var response = JSON.parse(e.replace(RegExp("%2F","g")," ")||{});
+								var response = JSON.parse(e.replace(RegExp("%2F","g")," ")||"{}");
 								fun(response.data);
 							});
 						});
@@ -72,7 +201,7 @@ var carrotdb = {
 									"data":JSON.stringify(data)
 								}
 							}).then(function(e){
-								var response = JSON.parse(e||{});
+								var response = JSON.parse(e||"{}");
 								fun(response.data);
 							});
 						});
@@ -91,7 +220,7 @@ var carrotdb = {
 									"collection":collection
 								}
 							}).then(function(e){
-								var response = JSON.parse(e||{});
+								var response = JSON.parse(e||"{}");
 								fun(response.data);
 							});
 						});
@@ -106,7 +235,7 @@ var carrotdb = {
 									"clear":collection
 								}
 							}).then(function(e){
-								var response = JSON.parse(e||{});
+								var response = JSON.parse(e||"{}");
 								fun(response.data);
 							});
 						});
@@ -122,8 +251,8 @@ var carrotdb = {
 				"api": carrotdb.config.api
 			}
 		}).then(function(e){
-			var response = JSON.parse(e||{});
-			if(response.status===200)
+			var response = JSON.parse(e||"{}");
+			if(response.status.toString('utf8')==="200")
 				fun(response.data);
 		});
 	}

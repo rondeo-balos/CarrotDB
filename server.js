@@ -1,7 +1,8 @@
 const http = require("http");
 const fs = require("fs");
 const qs = require("querystring");
-const base64 =require("./lib/base64");
+const base64 = require("./lib/base64");
+const _ = require("underscore")._;
 
 var self = "127.0.0.1";
 var port = "3000";
@@ -33,7 +34,6 @@ function get(req,res){
 		req.on('end',function(){
 			var post = qs.parse(disinfect(body,"%"));
 			//database
-			current = dbase;
 			if((data=set(post,"set"))!==false){
 				checktoken(res,post,function(){
 					setdb(res,post.collection,data);
@@ -44,33 +44,59 @@ function get(req,res){
 				});
 			}else if((data=set(post,"push"))!==false){
 				checktoken(res,post,function(){
-					//create a new node
 					pushdb(res,post.collection,data,post.data);
 				});
 			}else if((data=set(post,"collection"))!==false){
 				checktoken(res,post,function(){
-					//return a nodes
-					retrievedb(res,data);
+					retrievedb(dbase,res,data);
 				});
 			}else{
-				current = users;
-				if((data=set(post,"signup"))!==false){
+				//auth
+				if((data=set(post,"me"))!==false){
 					checktoken(res,post,function(){
-						//register account
-						
+						retrievedb(users,res,"users/"+data);
+					});
+				}else if((data=set(post,"signup"))!==false){
+					checktoken(res,post,function(){
+						aupushdb(res,base64.encode(Date.now().toString()),data);
+					});
+				}else if((data=set(post,"signin"))!==false){
+					checktoken(res,post,function(){
+						aufind(res,data);
+					});
+				}else if(set(post,"tempsignin")!==false){
+					checktoken(res,post,function(){
+						autpushdb(res,base64.encode(Date.now().toString()));
+					});
+				}else if((data=set(post,"update"))!==false){
+					checktoken(res,post,function(){
+						auupdate(res,data,post.data);
+					});
+				}else if((data=set(post,"migrate"))!==false){
+					checktoken(res,post,function(){
+						aumigrate(res,data,post.data);
 					});
 				}else
-					s_end(res,"404","Not Found!");
+					s_end(res,"404","Page Not Found!");
 			}
 		});
 	}else{
 		var get = qs.parse(disinfect(req.url,"%"));
 		if((data=set(get,"api"))!==false){
 			if(get.api===config.api){
-				genToken(res,get.api);
+				genToken(res,data);
 			}else{
 				s_end(res,"403","Invalid Api!");
 			}
+		}else if(req.url==="/carrotdb.js"){
+			res.writeHead(200,{
+				'Content-Type':'text/javascript',
+				'Access-Control-Allow-Origin':(origin||("http://"+self+":"+port))
+			});
+			fs.readFile("./public/carrotdb.js",function(err,data){
+				if(err) res.end();
+				res.end(data.toString('utf8'));
+			});
 		}else
 			s_end(res,"404","Not Found!");
 	}
@@ -96,18 +122,19 @@ function s_end(res,status,msg,data){
 		"data":data||{}
 	}
 	res.end(JSON.stringify(response));
+	savechanges();
 }
 
 function checktoken(res,post,fun){
 	if(post.api===config.api){
 		fs.readFile("./temp/"+post.token,function(err,data){
 			if(!err){
+				fs.unlink("./temp/"+post.token,function(err){});
 				if(post.token===data.toString('utf8')){
 					fun();
-					fs.unlink("./temp/"+post.token,function(err){});
 				}
 			}else{
-				s_end(res,"403",err);
+				s_end(res,"500",err);
 			}
 		});
 	}else{
@@ -119,7 +146,7 @@ function genToken(res,api){
 	var token = base64.encode(base64.decode(api)+Date.now());
 	fs.writeFile("./temp/"+token,token,function(err){
 		if(err)
-			s_end(res,"403",err);
+			s_end(res,"500",err);
 		else
 			s_end(res,"200","Success",{
 				"token":token
@@ -128,103 +155,216 @@ function genToken(res,api){
 }
 
 //for database
-var dbase = "./db/database.json";
+var dbase = require("./db/database.json");
 var rules = "./db/rules.json";
-var users = "./db/users.json";
-var current = dbase;
+var users = require("./db/users.json");
+
+function auupdate(res,id,pdata){
+	if(typeof pdata === 'string')
+		pdata = JSON.parse(pdata.toString('utf8')||"{}");
+
+	try{
+		ref = users["users"][id];
+		if(ref.user==pdata.user && ref.pass==pdata.pass){
+			if(ref.user!==pdata.usern){
+				var search = _.find(json.users,{user:pdata.usern});
+				if(typeof search === 'undefined'){
+					ref["user"] = pdata.usern;
+				}else
+					s_end(res,"403","This mobile is already registered with another account");
+			}
+			if(ref.pass!==pdata.passn){
+				ref["pass"] = pdata.passn;
+			}
+			ref["data"] = pdata.data;
+			ref["verified"] = true;
+			users = addProps(users,"users/"+id,ref);
+			users = dataFilter(users);
+			s_end(res,"200","Success",ref);
+		}else
+			s_end(res,"403","Invalid password");
+	}catch(err){
+		console.log(err);
+		s_end(res,"500",err);
+	}
+}
+
+function aumigrate(res,id,pdata){
+	if(typeof pdata === 'string')
+		pdata = JSON.parse(pdata.toString('utf8')||"{}");
+
+	var search = _.find(users.users,{user:pdata.user});
+	if(typeof search === 'undefined'){
+		try{
+			var newj = users["users"][id];
+			newj["user"] = pdata.user;
+			newj["pass"] = pdata.pass;
+			newj["data"] = pdata.data;
+			newj["verified"] = true;
+			users = addProps(users,"users/"+id,newj);
+			users = dataFilter(users);
+			s_end(res,"200","Success",{
+				"uid":id
+			});
+		}catch(err){
+			console.log(err);
+			s_end(res,"500",err);
+		}
+	}else
+		s_end(res,"403","This mobile is already registered with another account.");
+}
+
+function aupushdb(res,id,pdata){
+	if(typeof pdata === 'string')
+		pdata = JSON.parse(pdata.toString('utf8')||"{}");
+	
+	var search = _.find(users.users,{ user:pdata.user });
+	if(typeof search === 'undefined'){
+		try{
+			pdata.verified = true;
+			users = addProps(users,"users/"+id,pdata);
+			users = dataFilter(users);
+			s_end(res,"200","Success",{
+				"uid":id
+			});
+		}catch(err){
+			console.log(err);
+			s_end(res,"500",err);
+		}
+	}else
+			s_end(res,"403","This mobile is already registered with another account.");
+}
+
+function autpushdb(res,id){
+	try{
+		users = addProps(users,"users/"+id,{"user":"","pass":"","verified":false});
+		users = dataFilter(users);
+		s_end(res,"200","Success",{
+			"uid":id
+		});
+	}catch(err){
+		console.log(err);
+		s_end(res,"500",err);
+	}
+}
+
+function aufind(res,pdata){
+	if(typeof pdata === 'string')
+		pdata = JSON.parse(pdata.toString('utf8')||"{}");
+
+	var search = _.find(users.users,{ user:pdata.user });
+	if(typeof search !== 'undefined'){
+		search = _.find(users.users,{ user:pdata.user, pass:pdata.pass });
+		if(typeof search !== 'undefined'){
+			index = _.findKey(users.users,search);
+			search["uid"] = index;
+			s_end(res,"200","Welcome",search);
+		}else
+			s_end(res,"500","Invalid Credentials");
+	}else
+		s_end(res,"500","Phone/Email not Found.");
+}
+
+//------//
 
 function cleardb(res,ref){
-	fs.readFile(current,function(err,data){
-		if(err) s_end(res,"403",err);
-		var json = JSON.parse(data.toString('utf8')||"{}");
-		var evalstr = "javascript:json"+toEvaluation(ref);
-		try{
-			eval(evalstr+" = {}");
-			s_end(res,"200","Success");
-		}catch(err){
-			s_end(res,"403",err);
-		}
-		fs.writeFile(current,JSON.stringify(json),function(err){
-			if(err){
-				s_end(res,"403",err);
-			}
-		});
-	});
+	try{
+		dbase = addProps(dbase,ref,{});
+		dbase = dataFilter(dbase);
+		s_end(res,"200","Success");
+	}catch(err){
+		console.log(err);
+		s_end(res,"500",err);
+	}
 }
 
 function setdb(res,ref,pdata){
-	fs.readFile(current,function(err,data){
-		if(err) s_end(res,"403","Denied");
-		var json = JSON.parse(data.toString('utf8')||"{}");
-		//disinfect(pdata.toString('utf8'),"{}\'\'\"\":,\s\n/,;_-")
-		var evalstr = "javascript:json"+toEvaluation(ref);
-		try{
-			eval(evalstr+" = "+pdata);
-			s_end(res,"200","Success");
-		}catch(err){
-			s_end(res,"403",err);
-		}
-		fs.writeFile(current,JSON.stringify(json),function(err){
-			if(err)
-				s_end(res,"403",err);
-		});
-	});
+	try{
+		dbase = addProps(dbase,ref,pdata);
+		dbase = dataFilter(dbase);
+		s_end(res,"200","Success");
+	}catch(err){
+		console.log(err);
+		s_end(res,"500",err);
+	}
 }
 
 function pushdb(res,ref,id,pdata){
-	fs.readFile(current,function(err,data){
-		if(err) s_end(res,"403",err);
-		var json = JSON.parse(data.toString('utf8')||"{}");
-		var evalstr = "javascript:(json"+toEvaluation(ref)+"||(json"+toEvaluation(ref)+" = {}))"+"['"+id+"']";
-		try{
-			eval(evalstr+" = "+pdata);
-			s_end(res,"200","Success",{
-				"key":id
-			});
-		}catch(err){
-			s_end(res,"403",err);
-		}
-		fs.writeFile(current,JSON.stringify(json),function(err){
-			if(err) s_end(res,"403",err);
+	try{
+		dbase = addProps(dbase,ref+"/"+id,pdata);
+		dbase = dataFilter(dbase);
+		s_end(res,"200","Success",{
+			"key":id
 		});
-	});
+	}catch(err){
+		console.log(err);
+		s_end(res,"500",err);
+	}
 }
 
-function retrievedb(res,ref){
-	fs.readFile(current,function(err,data){
-		if(err) s_end(res,"403",err,{});
-		var json = JSON.parse(data.toString('utf8')||"{}");
-		var refs = ref.split(/\//);
-		try{
-			refs.forEach(function(e){
-				if(e.length!==0)
-					json = json[e];
-			});
-		}catch(err){
-			s_end(res,"403",err,{});
-		}
-		s_end(res,"200","Success",json);
-	});
+function retrievedb(current,res,ref){
+	var refs = ref.split(/\//);
+	var temp = current;
+	try{
+		refs.forEach(function(e){
+			if(e.length!==0)
+				temp = temp[e];
+		});
+		s_end(res,"200","Success",temp);
+	}catch(err){
+		console.log(err);
+		s_end(res,"500",err,{});
+	}
 }
+
+//credits: stackoverflow.com:columbos
+// this method is recursive
+function addProps(json,arr,val){
+	if(typeof arr === 'string'){
+		arr = arr.replace(RegExp("//","g"),"/");
+		arr = arr.split('/');
+	}
+
+	if(typeof val === 'string'){
+		val = JSON.parse(val);
+	}
+
+	json[arr[0]] = json[arr[0]] || {};
+
+	var tmp = json[arr[0]];
+
+	if(arr.length>1){
+		arr.shift();
+		addProps(tmp,arr,val);
+	}else
+		json[arr[0]] = val;
+
+	return json;
+}
+
+//credits: stackoverflow.com:Egor Stambakio
+// this method is non-recursive
+function dataFilter(jsonString) {
+    var res = JSON.parse(JSON.stringify(jsonString), (k, v) => {
+  	return (v === null // delete null values
+    || (Array.isArray(v) && v.length === 0) // delete empty arrays
+    || (typeof v === 'object' && Object.keys(v).length === 0)) // delete empty objects
+      ? undefined : v // else return the value
+	});
+	return res;
+}
+
+/*fs.readFile('file',function(err,data){});*/
+/*fs.appendFile('file','str',function(err){});*/
+/*fs.writeFileSync('file','str',function(err){});*/
+/*fs.unlink('file',function(err){});*/
+/*fs.rename('old','new',function(err){});*/
 
 function disinfect(stringval,whitelists){
 	return stringval.replace(RegExp("[^a-zA-Z0-9=&"+(whitelists||"")+"]","g"),"");
 }
 
-function toEvaluation(strval){
-	var str = disinfect(strval,"/%");
-	console.log(str);
-	if(str.startsWith("/"))
-		str = str.substr(1);
-	if(str.endsWith("/"))
-		str = str.substr(0,str.length-1);
-	str = str.replace(RegExp("[/]","g"),"']['");
-	str = "['"+str+"']";
-	return str;
+function savechanges(){
+	fs.writeFile('./db/users.json',JSON.stringify(dataFilter(users)),function(err){});
+	fs.writeFile('./db/database.json',JSON.stringify(dataFilter(dbase)),function(err){});
 }
-
-/*fs.readFile('file',function(err,data){});*/
-/*fs.appendFile('file','str',function(err){});*/
-/*fs.writeFile('file','str',function(err){});*/
-/*fs.unlink('file',function(err){});*/
-/*fs.rename('old','new',function(err){});*/
