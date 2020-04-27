@@ -1,5 +1,7 @@
 # CarrotDB
-Nodejs Database Backend/Serverside
+
+<img src="./assets/carrotdb_512.png" width="70px" height="70px" style="display:inline;"/>
+<b>CarrotDB</b> - Nodejs Database Backend/Serverside</p>
 
 <strong>Usages (JS)</strong>
 <p>Retrieving data from the database</p>
