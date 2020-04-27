@@ -1,7 +1,7 @@
 # CarrotDB
 
 <img src="./assets/carrotdb_512.png" width="70px" height="70px" style="display:inline;"/>
-<b>CarrotDB</b> - Nodejs Database Backend/Serverside</p>
+<b>CarrotDB</b> is a json-based database management system that you want with the querying and indexing that you need. It an open source dbms, and because of that it has the capabalities to operate offline which will boost your productivity to the next level.<br>
 
 <strong>Usages (JS)</strong>
 <p>Retrieving data from the database</p>
