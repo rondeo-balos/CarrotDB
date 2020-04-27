@@ -1,0 +1,3 @@
+default: f26522
+primary: f5af36
+red: f26c4f
